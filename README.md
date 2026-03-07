@@ -54,9 +54,8 @@ cd student-management-api
 
 2. Create a virtual environment (optional but recommended)
 
-python -m venv venv
-source venv/bin/activate   # Linux/Mac
-venv\Scripts\activate      # Windows
+python3 -m venv .venv
+source .venv/bin/activate
 
 3. Install dependencies
 
