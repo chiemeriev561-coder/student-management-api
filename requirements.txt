@@ -6,3 +6,4 @@ psycopg2-binary
 python-dotenv
 pytest
 httpx
+alembic==1.18.4
