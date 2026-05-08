@@ -9,9 +9,11 @@ A robust and scalable RESTful API built with **FastAPI**, designed for managing 
 - **Full CRUD Support**: Manage Students and Courses through intuitive endpoints.
 - **Relational Data**: Many-to-Many relationships between students and courses (Database level).
 - **Automated Migrations**: Schema versioning managed by **Alembic**.
+- **Token Authentication**: Register and log in to access protected student and course endpoints.
 - **Data Validation**: Strict type-checking and validation using **Pydantic v2**.
 - **Interactive Documentation**: Instant API testing via Swagger UI and ReDoc.
 - **Automated Testing**: Comprehensive test suite using **pytest** and an in-memory SQLite database.
+- **CI Validation**: GitHub Actions runs the test suite on pushes and pull requests.
 
 ---
 
@@ -61,6 +63,7 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory:
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/student_management
+AUTH_SECRET_KEY=replace-this-with-a-long-random-secret
 ```
 
 ### 3. Run Migrations
@@ -98,15 +101,42 @@ uvicorn app.main:app --reload
 | `PUT` | `/courses/{id}` | Update course information |
 | `DELETE` | `/courses/{id}` | Remove a course |
 
+### Authentication
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/auth/register` | Create a user account and return a bearer token |
+| `POST` | `/auth/login` | Authenticate and return a bearer token |
+
+All `/students/*` and `/courses/*` endpoints require an `Authorization: Bearer <token>` header.
+
 ---
 
 ## 🧪 Testing
 
-The project uses `pytest` with a dedicated in-memory SQLite configuration to ensure isolation during tests.
+The project uses `pytest` with an isolated in-memory SQLite database for repeatable local and CI runs.
+
+### Test Categories
+
+- **Unit tests** validate core CRUD and authentication logic without going through the HTTP layer.
+- **Integration tests** verify complete request flows, database interaction, and API responses with `TestClient`.
+- **Fixtures** provide shared mock data and an isolated database session, so tests never touch production data.
+
+### Run the Suite
 
 ```bash
-pytest
+python -m pytest -q
 ```
+
+### Run by Category
+
+```bash
+python -m pytest tests/unit -q
+python -m pytest tests/integration -q
+```
+
+### Continuous Integration
+
+GitHub Actions runs the full test suite automatically on every push to `main` and on all pull requests. The workflow lives in [.github/workflows/tests.yml](/home/victor/Documents/student-management-api/.github/workflows/tests.yml:1).
 
 ---
 
