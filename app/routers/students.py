@@ -3,10 +3,15 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.crud import student as crud_student
 from app.schemas import students as schemas_student
 
-router = APIRouter(prefix="/students", tags=["Students"])
+router = APIRouter(
+    prefix="/students",
+    tags=["Students"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/", response_model=List[schemas_student.Student])

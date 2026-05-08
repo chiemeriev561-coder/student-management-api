@@ -8,10 +8,11 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.models.course import Course
 from app.models.student import Student
-from app.routers import courses, students
+from app.models.user import User
+from app.routers import auth, courses, students
 
 # Ensure SQLAlchemy metadata is fully registered before creating tables.
-_ = [Student, Course]
+_ = [Student, Course, User]
 
 TEST_DATABASE_URL = "sqlite://"
 engine = create_engine(
@@ -24,6 +25,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 def create_test_app() -> FastAPI:
     app = FastAPI(title="Student Management API Test")
+    app.include_router(auth.router)
     app.include_router(students.router)
     app.include_router(courses.router)
 
@@ -40,6 +42,20 @@ def create_test_app() -> FastAPI:
 
     app.dependency_overrides[get_db] = override_get_db
     return app
+
+
+def register_and_get_auth_headers(client: TestClient, username: str = "admin"):
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "email": f"{username}@example.com",
+            "password": "strong-password",
+        },
+    )
+    assert response.status_code == 201
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture()
@@ -59,7 +75,54 @@ def test_root_endpoint(client: TestClient):
     assert response.json() == {"message": "Welcome to the Student Management API!"}
 
 
+def test_register_and_login_returns_access_token(client: TestClient):
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "username": "admin",
+            "email": "admin@example.com",
+            "password": "strong-password",
+        },
+    )
+
+    assert register_response.status_code == 201
+    register_body = register_response.json()
+    assert register_body["token_type"] == "bearer"
+    assert register_body["user"]["username"] == "admin"
+    assert "access_token" in register_body
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "strong-password"},
+    )
+
+    assert login_response.status_code == 200
+    login_body = login_response.json()
+    assert login_body["token_type"] == "bearer"
+    assert login_body["user"]["email"] == "admin@example.com"
+
+
+def test_login_rejects_invalid_credentials(client: TestClient):
+    response = client.post(
+        "/auth/login",
+        json={"username": "missing", "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid username or password"}
+
+
+def test_protected_endpoints_require_authentication(client: TestClient):
+    response = client.get("/students/")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Authentication credentials were not provided"
+    }
+
+
 def test_student_crud_flow(client: TestClient):
+    headers = register_and_get_auth_headers(client)
     create_payload = {
         "name": "Alice Johnson",
         "age": 21,
@@ -67,7 +130,7 @@ def test_student_crud_flow(client: TestClient):
         "major": "Computer Science",
     }
 
-    create_response = client.post("/students/", json=create_payload)
+    create_response = client.post("/students/", json=create_payload, headers=headers)
     assert create_response.status_code == 200
     created_student = create_response.json()
     assert created_student["name"] == create_payload["name"]
@@ -75,23 +138,24 @@ def test_student_crud_flow(client: TestClient):
 
     student_id = created_student["id"]
 
-    list_response = client.get("/students/")
+    list_response = client.get("/students/", headers=headers)
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
 
-    get_response = client.get(f"/students/{student_id}")
+    get_response = client.get(f"/students/{student_id}", headers=headers)
     assert get_response.status_code == 200
     assert get_response.json()["id"] == student_id
 
     update_response = client.put(
         f"/students/{student_id}",
         json={"major": "Software Engineering", "age": 22},
+        headers=headers,
     )
     assert update_response.status_code == 200
     assert update_response.json()["major"] == "Software Engineering"
     assert update_response.json()["age"] == 22
 
-    delete_response = client.delete(f"/students/{student_id}")
+    delete_response = client.delete(f"/students/{student_id}", headers=headers)
     assert delete_response.status_code == 200
     assert delete_response.json() == {
         "message": "Student 'Alice Johnson' successfully deleted"
@@ -99,6 +163,7 @@ def test_student_crud_flow(client: TestClient):
 
 
 def test_student_duplicate_email_returns_400(client: TestClient):
+    headers = register_and_get_auth_headers(client)
     payload = {
         "name": "Alice Johnson",
         "age": 21,
@@ -106,8 +171,8 @@ def test_student_duplicate_email_returns_400(client: TestClient):
         "major": "Computer Science",
     }
 
-    first_response = client.post("/students/", json=payload)
-    duplicate_response = client.post("/students/", json=payload)
+    first_response = client.post("/students/", json=payload, headers=headers)
+    duplicate_response = client.post("/students/", json=payload, headers=headers)
 
     assert first_response.status_code == 200
     assert duplicate_response.status_code == 400
@@ -115,9 +180,12 @@ def test_student_duplicate_email_returns_400(client: TestClient):
 
 
 def test_student_not_found_endpoints_return_404(client: TestClient):
-    get_response = client.get("/students/9999")
-    delete_response = client.delete("/students/9999")
-    update_response = client.put("/students/9999", json={"major": "Physics"})
+    headers = register_and_get_auth_headers(client)
+    get_response = client.get("/students/9999", headers=headers)
+    delete_response = client.delete("/students/9999", headers=headers)
+    update_response = client.put(
+        "/students/9999", json={"major": "Physics"}, headers=headers
+    )
 
     assert get_response.status_code == 404
     assert get_response.json() == {"detail": "Student not found"}
@@ -128,13 +196,14 @@ def test_student_not_found_endpoints_return_404(client: TestClient):
 
 
 def test_course_crud_flow(client: TestClient):
+    headers = register_and_get_auth_headers(client)
     create_payload = {
         "title": "Algorithms",
         "description": "Core algorithms and analysis",
         "credits": 3,
     }
 
-    create_response = client.post("/courses/", json=create_payload)
+    create_response = client.post("/courses/", json=create_payload, headers=headers)
     assert create_response.status_code == 200
     created_course = create_response.json()
     assert created_course["title"] == create_payload["title"]
@@ -142,23 +211,24 @@ def test_course_crud_flow(client: TestClient):
 
     course_id = created_course["id"]
 
-    list_response = client.get("/courses/")
+    list_response = client.get("/courses/", headers=headers)
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
 
-    get_response = client.get(f"/courses/{course_id}")
+    get_response = client.get(f"/courses/{course_id}", headers=headers)
     assert get_response.status_code == 200
     assert get_response.json()["id"] == course_id
 
     update_response = client.put(
         f"/courses/{course_id}",
         json={"description": "Updated description", "credits": 4},
+        headers=headers,
     )
     assert update_response.status_code == 200
     assert update_response.json()["description"] == "Updated description"
     assert update_response.json()["credits"] == 4
 
-    delete_response = client.delete(f"/courses/{course_id}")
+    delete_response = client.delete(f"/courses/{course_id}", headers=headers)
     assert delete_response.status_code == 200
     assert delete_response.json() == {
         "message": "Course 'Algorithms' successfully deleted"
@@ -166,9 +236,10 @@ def test_course_crud_flow(client: TestClient):
 
 
 def test_course_not_found_endpoints_return_404(client: TestClient):
-    get_response = client.get("/courses/9999")
-    delete_response = client.delete("/courses/9999")
-    update_response = client.put("/courses/9999", json={"credits": 5})
+    headers = register_and_get_auth_headers(client)
+    get_response = client.get("/courses/9999", headers=headers)
+    delete_response = client.delete("/courses/9999", headers=headers)
+    update_response = client.put("/courses/9999", json={"credits": 5}, headers=headers)
 
     assert get_response.status_code == 404
     assert get_response.json() == {"detail": "Course not found"}
