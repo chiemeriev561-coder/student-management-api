@@ -14,9 +14,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.database import Base, get_db
+from app.cache import cache
 from app.models.course import Course
 from app.models.student import Student
 from app.models.user import User
+from app.main import create_app
+from app.reports import clear_report_jobs
 from app.routers import auth, courses, students
 
 # Ensure SQLAlchemy metadata is fully registered before creating tables.
@@ -32,14 +35,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 
 def create_test_app() -> FastAPI:
-    app = FastAPI(title="Student Management API Test")
-    app.include_router(auth.router)
-    app.include_router(students.router)
-    app.include_router(courses.router)
-
-    @app.get("/", tags=["Root"])
-    def read_root():
-        return {"message": "Welcome to the Student Management API!"}
+    app = create_app(rate_limit_max_requests=1000, rate_limit_window_seconds=60)
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -48,6 +44,7 @@ def create_test_app() -> FastAPI:
         finally:
             db.close()
 
+    app.state.session_factory = TestingSessionLocal
     app.dependency_overrides[get_db] = override_get_db
     return app
 
@@ -56,11 +53,15 @@ def create_test_app() -> FastAPI:
 def db_session():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    cache.clear()
+    clear_report_jobs()
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
+        cache.clear()
+        clear_report_jobs()
         Base.metadata.drop_all(bind=engine)
 
 

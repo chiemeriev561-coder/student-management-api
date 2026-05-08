@@ -26,3 +26,10 @@ class Student(StudentBase):
 
     # This tells Pydantic to read data even if it is not a dict, but an ORM model
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentListResponse(BaseModel):
+    items: list[Student]
+    total: int
+    skip: int
+    limit: int

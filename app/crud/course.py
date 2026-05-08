@@ -11,6 +11,10 @@ def get_courses(db: Session, skip: int = 0, limit: int = 100):
     return db.query(Course).offset(skip).limit(limit).all()
 
 
+def count_courses(db: Session):
+    return db.query(Course).count()
+
+
 def create_course(db: Session, course: CourseCreate):
     db_course = Course(**course.model_dump())
     db.add(db_course)

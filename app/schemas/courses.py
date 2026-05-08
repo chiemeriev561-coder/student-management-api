@@ -24,3 +24,10 @@ class Course(CourseBase):
 
     # This tells Pydantic to read data even if it is not a dict, but an ORM model
     model_config = ConfigDict(from_attributes=True)
+
+
+class CourseListResponse(BaseModel):
+    items: list[Course]
+    total: int
+    skip: int
+    limit: int

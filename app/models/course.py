@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, String, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -8,6 +9,9 @@ student_course = Table(
     Base.metadata,
     Column("student_id", Integer, ForeignKey("students.id"), primary_key=True),
     Column("course_id", Integer, ForeignKey("courses.id"), primary_key=True),
+    Column("grade", String(5), nullable=True),
+    sa.Index("ix_student_course_student_id", "student_id"),
+    sa.Index("ix_student_course_course_id", "course_id"),
 )
 
 

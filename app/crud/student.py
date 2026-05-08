@@ -15,6 +15,10 @@ def get_students(db: Session, skip: int = 0, limit: int = 100):
     return db.query(Student).offset(skip).limit(limit).all()
 
 
+def count_students(db: Session):
+    return db.query(Student).count()
+
+
 def create_student(db: Session, student: StudentCreate):
     db_student = Student(**student.model_dump())
     db.add(db_student)
